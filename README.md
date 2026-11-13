@@ -1,94 +1,150 @@
-# 🍔 CampusBite — Restaurant Ordering & Delivery Platform
+# 🍔 CampusBite
 
-CampusBite is a full-stack food ordering and delivery app for a campus. It has three roles:
+CampusBite is a food ordering and delivery app I built for a campus setting. You can browse the restaurants around campus, order something, and watch it go from the kitchen to your door.
 
-- **Customers** browse restaurants, order food, track deliveries, leave reviews, request refunds and get AI-generated insights about their orders.
-- **Restaurant owners** manage their menu, move orders through preparation, assign delivery partners, handle refund requests and see stats and reminders.
-- **Delivery partners** see the orders assigned to them, update delivery status and view their history.
+It has three kinds of users:
 
-The frontend is **React**, the backend is **FastAPI** with **SQLAlchemy** on **PostgreSQL**, and the backend runs in **Docker Compose**.
+- **Customers** order food, track it, leave reviews, ask for refunds, and can ask an AI assistant questions about their own orders.
+- **Restaurant owners** run their menu, push orders through the kitchen, hand them off to a delivery partner, deal with refund requests, and get nudged when an order has been sitting around too long.
+- **Delivery partners** pick up the orders they're assigned and mark them delivered.
+
+The frontend is React (with Vite). The backend is FastAPI with SQLAlchemy on PostgreSQL, and the whole backend runs in Docker Compose.
 
 ---
 
 ## Tech stack
 
-| Layer | Technologies |
-|---|---|
-| Frontend | React 18, JavaScript (ES6+), React Hooks (`useState`, `useEffect`, `useContext`, custom hooks), React Router DOM 6, Axios, Vite, plain responsive CSS |
-| Backend | Python 3.12, FastAPI, Pydantic v2, SQLAlchemy 2.0 ORM, JWT (`python-jose`), `bcrypt` |
-| Database | PostgreSQL 16 (Docker). SQLite fallback for local dev and tests |
-| AI | OpenAI API (Chat Completions, default model `gpt-4o-mini`) |
-| DevOps | Docker, Docker Compose, Git/GitHub |
-| Testing | pytest + FastAPI TestClient |
+- **Frontend:**
+  - React 18 with hooks, plus a couple of custom ones
+  - React Router 6
+  - Axios
+  - Vite
+  - Plain responsive CSS (no UI framework)
+- **Backend:**
+  - Python 3.12, FastAPI, Pydantic v2
+  - SQLAlchemy 2.0
+  - JWT auth via `python-jose`
+  - Password hashing with `bcrypt`
+- **Database:** PostgreSQL 16 in Docker. Local dev and the tests fall back to SQLite.
+- **AI:** the OpenAI Chat Completions API, using `gpt-4o-mini` by default.
+- **Testing:** pytest with FastAPI's TestClient.
 
 ---
 
 ## Features
 
-### Authentication & authorization
-- Register and log in for all three roles. Registering as an owner also creates their restaurant.
-- Passwords are hashed with **bcrypt**. Login returns a **JWT** (HS256) carrying the user id and role.
-- The frontend keeps the token in `localStorage`. An Axios interceptor adds `Authorization: Bearer <token>` to every request and logs the user out on a 401.
-- **The backend enforces RBAC.** Every protected route uses a `require_role(...)` dependency, and there are ownership checks on top of that:
-  - customers can only see and change their own orders (other people's orders return 404),
-  - owners can only manage their own restaurant's menu, orders, returns and reminders,
-  - delivery partners can only see and update orders assigned to them.
-- On the frontend, protected routes and role-based navigation redirect users who don't have the right role.
+### Logging in and permissions
 
-### Customer
-- Browse restaurants (search, pagination, average rating).
-- Restaurant menu: search dishes by name, filter by min/max price and availability, sort by name or price.
-- Cart managed with React Context and saved to localStorage. A cart holds items from one restaurant at a time. You can change quantities or remove items.
-- Checkout with a **dummy payment**: the order is created, a `payment` ledger entry is written and `payment_status` becomes `mock_paid`.
-- Dashboard: order history with status and date filters, pagination, and payment and return status badges.
-- Order tracking page with a visual status tracker and the payment ledger.
-- Cancel an order (only while it is `PLACED`). The mock payment is reversed automatically.
-- Rate and review an order after delivery (one review per order).
-- Request a return/refund after delivery. A reason is required and only one request is allowed per order.
-- **AI order insights**: get a summary or ask free-text questions about your own orders.
+All three roles can register and log in. If you register as an owner, your restaurant is created at the same time.
 
-### Restaurant owner
-- Dashboard with stats: total orders, orders today, revenue, refunded amount, average rating, orders by status and top dishes.
-- **Reminders** panel for orders stuck in `PLACED`/`ACCEPTED` for more than 15 minutes. These come from a background task. You can dismiss them or trigger a check manually.
-- Menu management: add, edit and delete dishes (deleting is a soft delete so past orders stay intact) and toggle availability.
-- Order management: filter by status and date, accept, start preparing, mark ready, reject, and assign a delivery partner once an order is `READY`.
-- Return/refund requests: approve (writes a `refund` ledger entry, sets `payment_status=refunded` and order status `REFUNDED`) or reject (`return_status=rejected`), with an optional note.
+Passwords are hashed with bcrypt. Logging in gives you a JWT (HS256) that carries your user id and role. The frontend keeps it in `localStorage`, and an Axios interceptor attaches it to every request. If the backend ever answers with a 401, you're logged out.
 
-### Delivery partner
-- List of assigned deliveries with a status filter, showing the customer's name, phone and address and the order items.
-- Move an order from `ASSIGNED` to `OUT_FOR_DELIVERY` to `DELIVERED`.
-- Paginated delivery history.
+The frontend hides pages you aren't allowed to see, but the real checks happen on the backend. Every protected route goes through a `require_role(...)` dependency, and there are ownership checks on top of that:
 
-### Order lifecycle
+- **Customers** only ever see their own orders. Ask for someone else's and you get a 404, as if it doesn't exist.
+- **Owners** can only touch their own restaurant: its menu, orders, refunds and reminders.
+- **Delivery partners** only see orders assigned to them.
+
+### As a customer
+
+**Finding food**
+- Browse restaurants with search, pagination and an average rating for each.
+- Inside a restaurant, search dishes by name, filter by price and availability, and sort by name or price.
+
+**Ordering**
+- Your cart lives in React Context and is saved to localStorage, so it survives a refresh. It holds items from one restaurant at a time.
+- Checkout uses a **dummy payment**. No real money is involved. The order is created, a `payment` entry goes into the ledger, and the order is marked `mock_paid`.
+
+**After you've ordered**
+- Your dashboard lists past orders. You can filter it by status and date, and it's paginated.
+- Each order has a tracking page with a visual progress tracker and its payment history.
+- You can cancel while the order is still `PLACED`. The payment is reversed automatically.
+- Once it's delivered, you can leave one review and one return/refund request per order. A refund request needs a reason.
+
+**AI assistant**
+- Ask questions about your past orders, or just ask for a summary.
+
+### As a restaurant owner
+
+**Dashboard**
+- Total orders, orders today, revenue, refunded amount, average rating, a count of orders in each status, and your best-selling dishes.
+
+**Reminders**
+- A background task flags any order stuck in `PLACED` or `ACCEPTED` for more than 15 minutes.
+- You can dismiss reminders, or run the check yourself instead of waiting for the next one.
+
+**Menu**
+- Add, edit and delete dishes, and switch them on or off.
+- Deleting is a soft delete, so old orders still show what was ordered.
+
+**Orders**
+- Filter by status and date.
+- Accept an order, start preparing it, mark it ready, or reject it.
+- Once it's ready, assign a delivery partner.
+
+**Refunds**
+- **Approve:** a `refund` entry goes into the ledger, the payment status becomes `refunded`, and the order becomes `REFUNDED`.
+- **Reject:** the return status becomes `rejected`.
+- Either way you can leave a note.
+
+### As a delivery partner
+
+- You get a list of your assigned orders with the customer's name, phone number, address and what they ordered. It can be filtered by status.
+- Move each one from `ASSIGNED` to `OUT_FOR_DELIVERY` to `DELIVERED`.
+- There's a paginated history of everything you've delivered.
+
+### How an order moves
 
 ```
 PLACED → ACCEPTED → PREPARING → READY → ASSIGNED → OUT_FOR_DELIVERY → DELIVERED
    └→ CANCELLED                                                   └→ REFUNDED (return approved)
 ```
 
-| Transition | Who |
+| Step | Who does it |
 |---|---|
-| PLACED → ACCEPTED | Owner |
-| PLACED → CANCELLED | Customer or owner (cancelling is only possible from PLACED) |
-| ACCEPTED → PREPARING → READY | Owner |
-| READY → ASSIGNED | Owner, through the assign endpoint (target user must be a delivery partner) |
-| ASSIGNED → OUT_FOR_DELIVERY → DELIVERED | The assigned delivery partner only |
-| DELIVERED → REFUNDED | Happens automatically when the owner approves a return |
+| PLACED → ACCEPTED, PREPARING, READY | The owner |
+| READY → ASSIGNED | The owner, by assigning a delivery partner (it has to be an actual delivery partner) |
+| ASSIGNED → OUT_FOR_DELIVERY → DELIVERED | Only the delivery partner it was assigned to |
+| PLACED → CANCELLED | The customer or the owner, and only from `PLACED` |
+| DELIVERED → REFUNDED | Happens automatically when the owner approves a refund |
 
-The backend rejects any other transition with **400**, and a transition attempted by the wrong role with **403**. The rules live in [`backend/app/order_rules.py`](backend/app/order_rules.py).
+Anything that skips a step gets a **400**. A step taken by the wrong role gets a **403**. All of these rules are in one place: [`backend/app/order_rules.py`](backend/app/order_rules.py).
 
-### AI order insights
-- `POST /api/ai/insights` with an optional `question`. With no question, it returns a summary.
-- The backend loads **only the authenticated customer's** orders (the 50 most recent: items, totals, statuses, dates), sends them as JSON context to OpenAI and returns the answer.
-- The API key is read from the `OPENAI_API_KEY` environment variable and never reaches the frontend.
-- Error handling: missing or invalid key → 503, OpenAI rate limit → 429, other OpenAI errors → 502.
-- There is also a per-user in-memory rate limit (`AI_RATE_LIMIT_PER_MINUTE`, default 5/min). It returns 429 with a `Retry-After` header.
-- Example questions: *"Summarize my last five orders"*, *"Which of my orders are still not delivered?"*, *"How much did I spend this week?"*, *"Which food items have I ordered most frequently?"*
+### The AI assistant
 
-### Middleware & background tasks
-- `RequestLoggingMiddleware` logs the method, path, status and response time of every request, and adds `X-Process-Time` and `X-Request-ID` response headers.
-- CORS middleware is configured through `CORS_ORIGINS`.
-- A background **reminder loop** starts in FastAPI's lifespan and runs every `REMINDER_INTERVAL_SECONDS`. It finds `PLACED`/`ACCEPTED` orders whose `updated_at` is older than `REMINDER_THRESHOLD_MINUTES` (15) and writes rows to `admin_reminder_logs`, at most one per order and status. Reminders are resolved automatically when the order moves on.
+The endpoint is `POST /api/ai/insights`, with an optional `question` field. Leave the question out and you get a summary of your orders.
+
+When a request comes in, the backend:
+1. Pulls the 50 most recent orders belonging to **the logged-in customer and nobody else**: items, totals, statuses and dates.
+2. Sends them to OpenAI as JSON context.
+3. Returns the answer.
+
+The OpenAI key comes from the `OPENAI_API_KEY` environment variable and never reaches the browser.
+
+| When this happens | You get |
+|---|---|
+| The key is missing or wrong | 503 |
+| OpenAI rate-limits us | 429 |
+| OpenAI fails in some other way | 502 |
+| One user sends more than `AI_RATE_LIMIT_PER_MINUTE` requests a minute (default 5) | 429 with a `Retry-After` header |
+
+The per-user limit is a small in-memory limiter.
+
+Some questions to try:
+- *"Summarize my last five orders"*
+- *"Which of my orders haven't been delivered yet?"*
+- *"How much did I spend this week?"*
+- *"What do I order the most?"*
+
+### Behind the scenes
+
+- **Request logging:** `RequestLoggingMiddleware` logs the method, path, status and response time of every request. It also adds `X-Process-Time` and `X-Request-ID` headers to each response.
+- **CORS:** configured through `CORS_ORIGINS`.
+- **Reminder loop:**
+  - Starts with the app and runs every `REMINDER_INTERVAL_SECONDS`.
+  - Looks for `PLACED` or `ACCEPTED` orders that haven't changed in `REMINDER_THRESHOLD_MINUTES` (15 by default).
+  - Writes a reminder to `admin_reminder_logs`, at most one per order and status.
+  - A reminder clears itself once its order moves on.
 
 ---
 
@@ -97,23 +153,23 @@ The backend rejects any other transition with **400**, and a transition attempte
 ```
 campusbite/
 ├── docker-compose.yml        # postgres + backend
-├── .env.example              # variables used by docker-compose
+├── .env.example              # variables docker-compose uses
 ├── backend/
 │   ├── Dockerfile
 │   ├── requirements.txt
 │   ├── .env.example          # for running without Docker
 │   ├── app/
-│   │   ├── main.py           # app, lifespan, middleware, routers
-│   │   ├── config.py         # pydantic-settings
-│   │   ├── database.py       # engine / session / Base
+│   │   ├── main.py           # app setup, lifespan, middleware, routers
+│   │   ├── config.py         # settings (pydantic-settings)
+│   │   ├── database.py       # engine, session, Base
 │   │   ├── models.py         # SQLAlchemy models
 │   │   ├── schemas.py        # Pydantic schemas
 │   │   ├── security.py       # bcrypt + JWT
-│   │   ├── deps.py           # auth & RBAC dependencies
-│   │   ├── order_rules.py    # status transition rules
-│   │   ├── middleware.py     # request logging / timing
-│   │   ├── tasks.py          # reminder background task
-│   │   ├── ai_service.py     # OpenAI integration + rate limiter
+│   │   ├── deps.py           # auth and role checks
+│   │   ├── order_rules.py    # which status changes are allowed
+│   │   ├── middleware.py     # request logging and timing
+│   │   ├── tasks.py          # the reminder loop
+│   │   ├── ai_service.py     # OpenAI call + rate limiter
 │   │   ├── seed.py           # demo data
 │   │   └── routers/          # auth, restaurants, orders, owner, delivery, ai
 │   └── tests/                # pytest suite
@@ -131,24 +187,28 @@ campusbite/
 
 ## Database
 
-Tables (SQLAlchemy models in [`backend/app/models.py`](backend/app/models.py)):
+The models are in [`backend/app/models.py`](backend/app/models.py).
 
-| Table | Purpose | Key relationships |
-|---|---|---|
-| `users` | All users, with a `role` column | 1→N orders (as customer), 1→N orders (as delivery partner), 1→N restaurants |
-| `restaurants` | Restaurant profile | `owner_id → users`; 1→N menu items and orders |
-| `menu_items` | Dishes (`is_available`, soft `is_deleted`) | `restaurant_id → restaurants` |
-| `orders` | Order header: status, payment status, return status, total | `customer_id`, `delivery_partner_id → users`, `restaurant_id → restaurants` |
-| `order_items` | Line items with a snapshot of name and price | `order_id → orders` |
-| `reviews` | Rating 1–5 and comment | `order_id` **unique** (one review per order) |
-| `payment_ledger` | `payment` / `refund` entries | `order_id → orders` (many per order) |
-| `return_requests` | Reason, status, resolution note | `order_id` **unique** (one request per order) |
-| `admin_reminder_logs` | Reminders for stale orders | `order_id → orders`, `restaurant_id → restaurants` |
+| Table | What's in it |
+|---|---|
+| `users` | Everyone, with a `role` column. A user can have orders as a customer, deliveries as a partner, or a restaurant as an owner. |
+| `restaurants` | One per owner (`owner_id`), along with its menu items and orders |
+| `menu_items` | Dishes, with an availability flag and a soft-delete flag |
+| `orders` | The main order record: status, payment status, return status, total, plus links to the customer, the restaurant and the delivery partner |
+| `order_items` | The lines of an order. The dish name and price are copied in, so later menu edits don't change old orders. |
+| `reviews` | A 1–5 rating and a comment, with at most one per order |
+| `payment_ledger` | `payment` and `refund` entries (an order can have several) |
+| `return_requests` | Reason, status and the owner's note, with at most one per order |
+| `admin_reminder_logs` | Reminders about orders that have been sitting too long |
 
-**Setup:** tables are created automatically when the app starts (`Base.metadata.create_all`). The Docker container runs `python -m app.seed` before starting, which fills an empty database with demo data and does nothing if users already exist. To start over with a fresh database, run `docker compose down -v`.
+**Setup:**
+- You don't need to run migrations. The tables are created when the app starts.
+- The Docker container runs `python -m app.seed` before starting. It fills an empty database with demo data and leaves it alone if there are already users.
+- To start fresh, run `docker compose down -v`.
 
 ### Demo accounts
-All demo accounts use the password **`password123`**.
+
+Every demo account uses the password **`password123`**.
 
 | Role | Email |
 |---|---|
@@ -156,32 +216,31 @@ All demo accounts use the password **`password123`**.
 | Restaurant owner | `owner@campusbite.com` (Spice Route), `owner2@` (Slice of Napoli), `owner3@` (Wok & Roll), `owner4@` (Green Bowl) |
 | Delivery partner | `partner@campusbite.com`, `partner2@campusbite.com` |
 
-The seed data includes an order history for the first customer, an active order at every stage, and one stale `PLACED` order, so the reminders panel has something to show straight away.
+The first customer already has a few past orders. There's also an active order at most stages of the flow, plus one order that's been stuck in `PLACED` for a while, so the reminders panel has something in it the first time you log in.
 
 ---
 
-## Running locally
+## Running it locally
 
-### Prerequisites
-- Docker + Docker Compose
-- Node.js 18+ and npm
+You'll need Docker (with Compose), and Node.js 18+ with npm.
 
-### 1. Backend (Docker Compose)
+### 1. Start the backend
 
 ```bash
 cp .env.example .env
-# Edit .env: set POSTGRES_PASSWORD and JWT_SECRET, and optionally OPENAI_API_KEY
+# open .env and set POSTGRES_PASSWORD and JWT_SECRET (OPENAI_API_KEY is optional)
 docker compose up --build
 ```
 
+Once it's up:
 - API: http://localhost:8000
 - Swagger UI: http://localhost:8000/docs
 - ReDoc: http://localhost:8000/redoc
 - Health check: http://localhost:8000/health
 
-Stop it with `docker compose down`. Add `-v` to also delete the database volume.
+`docker compose down` stops it. Add `-v` if you also want to delete the database.
 
-### 2. Frontend
+### 2. Start the frontend
 
 ```bash
 cd frontend
@@ -190,17 +249,17 @@ npm install
 npm run dev
 ```
 
-Open http://localhost:5173. The login page has one-click buttons for the demo accounts.
+Go to http://localhost:5173. The login page has buttons that log you in as each demo account, so you don't have to type anything.
 
-For a production build: `npm run build`. The output goes to `frontend/dist/`.
+For a production build, run `npm run build`. The output goes to `frontend/dist/`.
 
-### Running the backend without Docker (optional)
+### No Docker? That's fine too
 
 ```bash
 cd backend
 python3.12 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
-cp .env.example .env          # defaults to SQLite
+cp .env.example .env          # uses SQLite by default
 python -m app.seed
 uvicorn app.main:app --reload
 ```
@@ -212,83 +271,109 @@ cd backend
 pytest -q
 ```
 
-The tests cover auth, RBAC, data isolation between users, the full order lifecycle, rejection of invalid transitions, cancellation rules, the review and return/refund flows (including duplicate requests), filters and pagination, stats, the reminder task, and the AI endpoint (OpenAI is mocked, and the tests check that only the caller's orders are sent).
+The tests cover:
+- signing up and logging in
+- role checks, and making sure users can't see each other's data
+- the full order flow, including rejecting invalid steps
+- the cancellation rules
+- reviews and refunds, including duplicate requests
+- filters and pagination
+- the stats
+- the reminder task
+- the AI endpoint (OpenAI is mocked, and the test checks that only the caller's own orders are sent)
 
 ---
 
 ## Environment variables
 
-### Root `.env` (Docker Compose)
+### Root `.env` (for Docker Compose)
 
-| Variable | Description | Example |
+| Variable | What it does | Example |
 |---|---|---|
 | `POSTGRES_USER` | Database user | `campusbite` |
-| `POSTGRES_PASSWORD` | Database password (**secret**) | — |
+| `POSTGRES_PASSWORD` | Database password (keep it secret) | — |
 | `POSTGRES_DB` | Database name | `campusbite` |
-| `JWT_SECRET` | Key used to sign JWTs (**secret**, long and random) | — |
-| `JWT_EXPIRE_MINUTES` | How long a token is valid | `1440` |
-| `OPENAI_API_KEY` | OpenAI key (**secret**). AI endpoint returns 503 if empty | — |
-| `OPENAI_MODEL` | Model name | `gpt-4o-mini` |
-| `AI_RATE_LIMIT_PER_MINUTE` | AI requests allowed per user per minute | `5` |
-| `CORS_ORIGINS` | Allowed frontend origins, comma-separated | `http://localhost:5173` |
-| `REMINDER_THRESHOLD_MINUTES` | Minutes before an order counts as stale | `15` |
-| `REMINDER_INTERVAL_SECONDS` | How often the reminder task runs | `60` |
+| `JWT_SECRET` | Key used to sign login tokens. Make it long and random, and keep it secret. | — |
+| `JWT_EXPIRE_MINUTES` | How long a login lasts | `1440` |
+| `OPENAI_API_KEY` | Your OpenAI key (keep it secret). Without it the AI endpoint returns 503. | — |
+| `OPENAI_MODEL` | Which model to use | `gpt-4o-mini` |
+| `AI_RATE_LIMIT_PER_MINUTE` | AI requests each user can make per minute | `5` |
+| `CORS_ORIGINS` | Frontend URLs allowed to call the API, comma-separated | `http://localhost:5173` |
+| `REMINDER_THRESHOLD_MINUTES` | Minutes before an order counts as stuck | `15` |
+| `REMINDER_INTERVAL_SECONDS` | How often the reminder check runs | `60` |
 
-Docker Compose builds `DATABASE_URL` from the `POSTGRES_*` values. When running without Docker, set `DATABASE_URL` yourself in `backend/.env`.
+Docker Compose builds `DATABASE_URL` from the `POSTGRES_*` values for you. If you run the backend without Docker, set `DATABASE_URL` yourself in `backend/.env`.
 
 ### `frontend/.env`
 
-| Variable | Description |
-|---|---|
-| `VITE_API_URL` | Backend base URL, e.g. `http://localhost:8000/api` |
+The frontend only needs `VITE_API_URL`, which points at the backend, for example `http://localhost:8000/api`.
 
-`.env` files are git-ignored and secrets are never baked into the Docker image (`.dockerignore` excludes `.env`). Only the `.env.example` files are committed.
+`.env` files are git-ignored, and `.dockerignore` keeps them out of the Docker image, so secrets don't end up in either. Only the `.env.example` files are committed.
 
 ---
 
-## API documentation
+## API
 
-FastAPI generates interactive docs at **`/docs`** (Swagger) and **`/redoc`**. All routes are under `/api`. Protected routes need `Authorization: Bearer <token>`.
+FastAPI generates interactive docs at **`/docs`** (Swagger) and **`/redoc`**. Every route below is under `/api`. Protected routes need an `Authorization: Bearer <token>` header.
 
-| Method | Endpoint | Role | Description |
+| Method | Endpoint | Who can call it | What it does |
 |---|---|---|---|
-| POST | `/auth/register` | public | Register (returns a token) |
-| POST | `/auth/login` | public | Log in (returns a token) |
-| GET | `/auth/me` | any | Current user |
-| GET | `/restaurants` | public | List restaurants (`search`, `page`, `page_size`) |
-| GET | `/restaurants/{id}` | public | Restaurant details and rating |
-| GET | `/restaurants/{id}/menu` | public | Menu (`search`, `min_price`, `max_price`, `available_only`, `sort`, pagination) |
-| GET | `/restaurants/{id}/reviews` | public | Reviews |
-| POST | `/orders` | customer | Place an order (dummy payment → `mock_paid`) |
-| GET | `/orders/my` | customer | Order history (`status`, `date_from`, `date_to`, pagination) |
-| GET | `/orders/{id}` | owner of the order | Order details, including ledger, review and return |
-| POST | `/orders/{id}/cancel` | customer | Cancel (PLACED only) |
+| POST | `/auth/register` | anyone | Sign up and get a token |
+| POST | `/auth/login` | anyone | Log in and get a token |
+| GET | `/auth/me` | any logged-in user | Who am I? |
+| GET | `/restaurants` | anyone | List restaurants (`search`, `page`, `page_size`) |
+| GET | `/restaurants/{id}` | anyone | One restaurant, with its rating |
+| GET | `/restaurants/{id}/menu` | anyone | Its menu (`search`, `min_price`, `max_price`, `available_only`, `sort`, pagination) |
+| GET | `/restaurants/{id}/reviews` | anyone | Its reviews |
+| POST | `/orders` | customer | Place an order (dummy payment, ends up `mock_paid`) |
+| GET | `/orders/my` | customer | Your orders (`status`, `date_from`, `date_to`, pagination) |
+| GET | `/orders/{id}` | the customer who placed it | Full details: payments, review and refund request |
+| POST | `/orders/{id}/cancel` | customer | Cancel (only while `PLACED`) |
 | POST | `/orders/{id}/review` | customer | Review a delivered order |
-| POST | `/orders/{id}/return` | customer | Request a return/refund |
-| GET/PUT | `/owner/restaurant` | owner | View or update restaurant profile |
+| POST | `/orders/{id}/return` | customer | Ask for a refund |
+| GET/PUT | `/owner/restaurant` | owner | View or edit your restaurant |
 | GET/POST | `/owner/menu` | owner | List or add dishes |
-| PUT/DELETE | `/owner/menu/{id}` | owner | Update or delete a dish |
-| PATCH | `/owner/menu/{id}/availability` | owner | Toggle availability |
-| GET | `/owner/orders` | owner | Restaurant orders (`status`, `date_from`, `date_to`, pagination) |
-| PATCH | `/owner/orders/{id}/status` | owner | Set ACCEPTED / PREPARING / READY / CANCELLED |
+| PUT/DELETE | `/owner/menu/{id}` | owner | Edit or delete a dish |
+| PATCH | `/owner/menu/{id}/availability` | owner | Switch a dish on or off |
+| GET | `/owner/orders` | owner | Your restaurant's orders (`status`, `date_from`, `date_to`, pagination) |
+| PATCH | `/owner/orders/{id}/status` | owner | Move to ACCEPTED, PREPARING, READY or CANCELLED |
 | GET | `/owner/delivery-partners` | owner | List delivery partners |
 | POST | `/owner/orders/{id}/assign` | owner | Assign a partner (READY → ASSIGNED) |
-| GET | `/owner/stats` | owner | Restaurant statistics |
-| GET | `/owner/returns` | owner | Return requests (`status`, pagination) |
+| GET | `/owner/stats` | owner | Dashboard numbers |
+| GET | `/owner/returns` | owner | Refund requests (`status`, pagination) |
 | POST | `/owner/returns/{id}/approve` | owner | Approve and refund |
 | POST | `/owner/returns/{id}/reject` | owner | Reject |
-| GET | `/owner/reminders` | owner | Stale-order reminders |
-| POST | `/owner/reminders/refresh` | owner | Run the reminder scan now |
+| GET | `/owner/reminders` | owner | Reminders about stuck orders |
+| POST | `/owner/reminders/refresh` | owner | Run the reminder check now |
 | POST | `/owner/reminders/{id}/dismiss` | owner | Dismiss a reminder |
-| GET | `/delivery/orders` | partner | Assigned orders (active by default, `status` filter) |
-| PATCH | `/delivery/orders/{id}/status` | partner | Set OUT_FOR_DELIVERY / DELIVERED |
-| GET | `/delivery/history` | partner | Completed deliveries |
-| POST | `/ai/insights` | customer | AI summary or answer about your own orders |
+| GET | `/delivery/orders` | delivery partner | Your assigned orders (active by default, `status` filter) |
+| PATCH | `/delivery/orders/{id}/status` | delivery partner | Move to OUT_FOR_DELIVERY or DELIVERED |
+| GET | `/delivery/history` | delivery partner | Your completed deliveries |
+| POST | `/ai/insights` | customer | Ask the AI about your orders |
 
-Status codes used: `200/201/204` success, `400` invalid transition or business rule, `401` not authenticated, `403` wrong role, `404` not found or not yours, `409` duplicate (email, review, return), `422` validation error, `429` rate limited, `502/503` AI service problems.
+| Status code | Meaning |
+|---|---|
+| 200 / 201 / 204 | It worked |
+| 400 | You broke a rule, like skipping a step |
+| 401 | You're not logged in |
+| 403 | Your role isn't allowed to do that |
+| 404 | It doesn't exist, or it isn't yours |
+| 409 | Duplicate: an email that's already taken, a second review, or a second refund request |
+| 422 | Bad input |
+| 429 | Slow down |
+| 502 / 503 | The AI service is having trouble |
 
 ---
 
-## Deployment notes
-- The backend image is self-contained. Supply environment variables from your hosting platform (Render, Railway, Fly.io, ECS, …) and point `DATABASE_URL` at a managed PostgreSQL database.
-- The frontend is a static build (`npm run build`). Deploy `frontend/dist` to Netlify or Vercel, set `VITE_API_URL` when building, and add the frontend's URL to `CORS_ORIGINS`.
+## Deploying
+
+**Backend**
+- The Docker image has everything it needs.
+- Set the environment variables on whatever host you use (Render, Railway, Fly.io, ECS…).
+- Point `DATABASE_URL` at a managed PostgreSQL database.
+
+**Frontend**
+- It's a static build.
+- Run `npm run build` with `VITE_API_URL` set to your deployed API.
+- Upload `frontend/dist` to Netlify or Vercel.
+- Add the frontend's URL to `CORS_ORIGINS` on the backend.
